@@ -1,6 +1,7 @@
 apache-airflow-providers-apache-spark
 apache-airflow-providers-postgres
 airflow-provider-great-expectations
+apache-airflow[amazon]
 pyspark==3.3.2
 requests
 pandas
