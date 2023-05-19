@@ -28,9 +28,11 @@ def callApi(**kwargs):
 
     file_path = f"{AIRFLOW_DIR}{filename}.json" 
     with open(file_path, "w") as file:
+        file.write("[")
         for json_one in json_ans:
             file.write(str(json_one))
             file.write(",\n")
+        file.write("]")
 
 
 def upload_to_s3(connection_id, filename, key, bucket_name):
@@ -40,6 +42,26 @@ def upload_to_s3(connection_id, filename, key, bucket_name):
                    bucket_name=bucket_name,
                    replace=True)
 
+def get_dicts_from_file(**kwargs):
+    filename = kwargs['filename']
+    dicts = []
+    file_path = f"{AIRFLOW_DIR}{filename}.json" 
+    with open(file_path, "r") as file:
+        lines = file.readlines()
+        for line in lines:
+            js = ast.literal_eval(line[:-2])
+            dicts.append(js)
+    return dicts
+
+def get_ids_from_dicts(**kwargs):
+    ti = kwargs['ti']
+
+    dicts = get_dicts_from_file()
+    ids = []
+    for js in dicts:
+        ids.append(js['appid'])
+        
+    ti.xcom_push(key='ids of games', value=ids)
 
 with DAG('process_steam_data_with_api',
         description='get data from steamspy api, store on S3 and process it to AWS Redshift',
@@ -69,10 +91,18 @@ with DAG('process_steam_data_with_api',
             }
         )
 
+        get_ids_from_json = PythonOperator(
+            task_id='get_ids_from_json',
+            python_callable=get_ids_from_dicts,
+            op_kwargs={
+                'filename': 'steam_simple'
+            }
+        )
+
         remove_json_locally = BashOperator(
             task_id="remove_json_locally",
             bash_command=f"rm {AIRFLOW_DIR}steam_simple.json",
         )
 
-        get_basic_app_info >> upload_json_to_s3 >> remove_json_locally
+        get_basic_app_info >> upload_json_to_s3 >> get_ids_from_json >> remove_json_locally
         
