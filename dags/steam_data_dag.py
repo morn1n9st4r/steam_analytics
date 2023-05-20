@@ -1,5 +1,8 @@
 from datetime import datetime
 import requests
+import ast
+
+from billiard import Pool
 
 from airflow import DAG
 
@@ -10,21 +13,40 @@ from airflow.hooks.S3_hook import S3Hook
 
 AIRFLOW_DIR = "/opt/airflow/"
 
+def get_data_from_api(url):
+    response = requests.get(url)
+    if "appdetails" in url:
+        return [response.json()]
+    else:
+        return list(response.json().values())
+        
+
+
 def callApi(**kwargs):
     ti = kwargs['ti']
 
-    urls = kwargs['urls']
+    urls_ids = str(kwargs['urls']) \
+        .replace("[", "") \
+        .replace("]", "") \
+        .replace(", None", "") \
+        .split(", ")
+    header = kwargs['header']
     filename = kwargs['filename']
 
-    json_ans = []
-    for url in urls:
-        response = requests.get(url)
-        if "appdetails" in url:
-            game_details = response.json()
-            json_ans.append(game_details)
-        else:
-            games_simple = list(response.json().values())
-            json_ans.extend(games_simple)
+    urls = [header + str(id) for id in urls_ids]
+
+    with Pool(processes=4) as pool:
+        json_ans = []
+        for data in pool.imap_unordered(get_data_from_api, urls):
+            try:
+                json_ans.extend(data)
+                # keep track of uploading progress
+                if (len(json_ans) % 10 == 0):
+                    print(len(json_ans))
+            except (IndexError, TypeError):
+                continue
+        pool.close()
+        pool.join()
 
     file_path = f"{AIRFLOW_DIR}{filename}.json" 
     with open(file_path, "w") as file:
@@ -42,24 +64,28 @@ def upload_to_s3(connection_id, filename, key, bucket_name):
                    bucket_name=bucket_name,
                    replace=True)
 
-def get_dicts_from_file(**kwargs):
-    filename = kwargs['filename']
+def get_dicts_from_file(filename):
     dicts = []
     file_path = f"{AIRFLOW_DIR}{filename}.json" 
     with open(file_path, "r") as file:
         lines = file.readlines()
         for line in lines:
-            js = ast.literal_eval(line[:-2])
+            js = {}
+            if line.startswith("["):
+                js = ast.literal_eval(line[1:-2])
+            elif line.startswith("{"):
+                js = ast.literal_eval(line[0:-2])
             dicts.append(js)
     return dicts
 
 def get_ids_from_dicts(**kwargs):
+    filename = kwargs['filename']
     ti = kwargs['ti']
 
-    dicts = get_dicts_from_file()
+    dicts = get_dicts_from_file(filename)
     ids = []
     for js in dicts:
-        ids.append(js['appid'])
+        ids.append(js.get("appid"))
         
     ti.xcom_push(key='ids of games', value=ids)
 
@@ -75,7 +101,8 @@ with DAG('process_steam_data_with_api',
             task_id=f'get_basic_app_info',
             python_callable=callApi,
             op_kwargs={
-                'urls': ['https://steamspy.com/api.php?request=all&page=0'],
+                'urls': "0",
+                'header': 'https://steamspy.com/api.php?request=all&page=',
                 'filename': 'steam_simple'
              }
         )
@@ -104,5 +131,15 @@ with DAG('process_steam_data_with_api',
             bash_command=f"rm {AIRFLOW_DIR}steam_simple.json",
         )
 
+        get_full_app_info = PythonOperator(
+            task_id='get_full_app_info',
+            python_callable=callApi,
+            op_kwargs={
+                'urls': '{{task_instance.xcom_pull(key="ids of games", task_ids="get_ids_from_json")}}',
+                'header': 'https://steamspy.com/api.php?request=appdetails&appid=',
+                'filename': 'steam_full'
+            }
+        )
+
         get_basic_app_info >> upload_json_to_s3 >> get_ids_from_json >> remove_json_locally
-        
+        get_ids_from_json >> get_full_app_info
