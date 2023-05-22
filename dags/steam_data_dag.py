@@ -12,10 +12,14 @@ from airflow.operators.bash_operator import BashOperator
 from airflow.hooks.S3_hook import S3Hook
 
 AIRFLOW_DIR = "/opt/airflow/"
+AWS_S3_BUCKET = 'steam-json-bucket'
+AIRFLOW_AWS_CONNECTION = 'AWS'
 
 def get_data_from_api(url):
     response = requests.get(url)
     if "appdetails" in url:
+        # since we are extending our total json json_ans variable
+        # we will return value in list
         return [response.json()]
     else:
         return list(response.json().values())
@@ -78,6 +82,7 @@ def get_dicts_from_file(filename):
             dicts.append(js)
     return dicts
 
+
 def get_ids_from_dicts(**kwargs):
     filename = kwargs['filename']
     ti = kwargs['ti']
@@ -88,6 +93,7 @@ def get_ids_from_dicts(**kwargs):
         ids.append(js.get("appid"))
         
     ti.xcom_push(key='ids of games', value=ids)
+
 
 with DAG('process_steam_data_with_api',
         description='get data from steamspy api, store on S3 and process it to AWS Redshift',
@@ -111,10 +117,10 @@ with DAG('process_steam_data_with_api',
             task_id='upload_json_to_s3',
             python_callable=upload_to_s3,
             op_kwargs={
-                'connection_id': "AWS",
+                'connection_id': AIRFLOW_AWS_CONNECTION,
                 'filename': f'{AIRFLOW_DIR}steam_simple.json',
                 'key': 'steam_simple.json',
-                'bucket_name': 'steam-json-bucket'
+                'bucket_name': AWS_S3_BUCKET
             }
         )
 
@@ -141,5 +147,22 @@ with DAG('process_steam_data_with_api',
             }
         )
 
+        upload_total_json_to_s3 = PythonOperator(
+            task_id='upload_total_json_to_s3',
+            python_callable=upload_to_s3,
+            op_kwargs={
+                'connection_id': AIRFLOW_AWS_CONNECTION,
+                'filename': f'{AIRFLOW_DIR}steam_full.json',
+                'key': 'steam_full.json',
+                'bucket_name': AWS_S3_BUCKET
+            }
+        )
+
+
+        remove_full_json_locally = BashOperator(
+            task_id="remove_full_json_locally",
+            bash_command=f"rm {AIRFLOW_DIR}steam_full.json",
+        )
+
         get_basic_app_info >> upload_json_to_s3 >> get_ids_from_json >> remove_json_locally
-        get_ids_from_json >> get_full_app_info
+        get_ids_from_json >> get_full_app_info >> upload_total_json_to_s3 >> remove_full_json_locally
