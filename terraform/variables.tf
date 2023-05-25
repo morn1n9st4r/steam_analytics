@@ -24,11 +24,6 @@ variable "redshift_subnet_1_cidr" {
   description = "IPv4 CIDR for Redshift subnet 1"
 }
 
-variable "redshift_subnet_2_cidr" {
-  type        = string
-  description = "IPv4 CIDR for Redshift subnet 2"
-}
-
 variable "redshift_cluster_identifier" {
   type        = string
   description = "Redshift Cluster Identifier"

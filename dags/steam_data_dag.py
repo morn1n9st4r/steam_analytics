@@ -10,6 +10,7 @@ from airflow.operators.python_operator import PythonOperator
 from airflow.operators.bash_operator import BashOperator
 
 from airflow.hooks.S3_hook import S3Hook
+from airflow.providers.amazon.aws.transfers.s3_to_redshift import S3ToRedshiftOperator
 
 AIRFLOW_DIR = "/opt/airflow/"
 AWS_S3_BUCKET = 'steam-json-bucket'
@@ -113,17 +114,6 @@ with DAG('process_steam_data_with_api',
              }
         )
 
-        upload_json_to_s3 = PythonOperator(
-            task_id='upload_json_to_s3',
-            python_callable=upload_to_s3,
-            op_kwargs={
-                'connection_id': AIRFLOW_AWS_CONNECTION,
-                'filename': f'{AIRFLOW_DIR}steam_simple.json',
-                'key': 'steam_simple.json',
-                'bucket_name': AWS_S3_BUCKET
-            }
-        )
-
         get_ids_from_json = PythonOperator(
             task_id='get_ids_from_json',
             python_callable=get_ids_from_dicts,
@@ -164,5 +154,19 @@ with DAG('process_steam_data_with_api',
             bash_command=f"rm {AIRFLOW_DIR}steam_full.json",
         )
 
-        get_basic_app_info >> upload_json_to_s3 >> get_ids_from_json >> remove_json_locally
+
+        # transfer_s3_to_redshift = S3ToRedshiftOperator(
+        #     task_id="transfer_s3_to_redshift",
+        #     redshift_conn_id="AWS_REDSHIFT",
+        #     aws_conn_id="AWS",
+        #     s3_bucket="steam-json-bucket",
+        #     s3_key="parquet/steam_complex.parquet",
+        #     schema="public",
+        #     table="steamdata",
+        #     method = "replace",
+        #     copy_options=["parquet"],
+        # )
+
+        get_basic_app_info >> get_ids_from_json >> remove_json_locally
         get_ids_from_json >> get_full_app_info >> upload_total_json_to_s3 >> remove_full_json_locally
+        # do spark stuff >> transfer_s3_to_redshift

@@ -1,5 +1,6 @@
 import org.apache.spark.sql.{SparkSession}
 import org.apache.spark.sql.functions.{col}
+
 object ProcessJSON extends App {
 
     val spark = SparkSession.builder()
@@ -9,11 +10,11 @@ object ProcessJSON extends App {
         
     spark.sparkContext
         .hadoopConfiguration
-        .set("fs.s3a.access.key", "key")
+        .set("fs.s3a.access.key", "AKIA2JZCCPMHCOW3NI3F")
 
     spark.sparkContext
         .hadoopConfiguration
-        .set("fs.s3a.secret.key", "key")
+        .set("fs.s3a.secret.key", "rdV6io0psHaIrQZUS6JANqA10ICCj0ZymjKH1l57")
 
     spark.sparkContext
         .hadoopConfiguration
@@ -24,7 +25,6 @@ object ProcessJSON extends App {
     
     df.printSchema()
 
-
     val df_flattened = df.selectExpr("appid","tags.*")
     df_flattened.registerTempTable("tags")
     
@@ -32,11 +32,12 @@ object ProcessJSON extends App {
         df.withColumnRenamed(column, "tag_" + column)
     }
 
-
-
     val newdf = df.drop(col("tags"))
                   .join(prefixedData, df("appid") === prefixedData("tag_appid"))
                   .drop(col("tag_appid"))
+                  // replace as abbreviations
+                  .drop(col("languages"))
+
     newdf.printSchema()
-    // df.write.parquet("s3a://steam-json-bucket/parquet/steam_complex.parquet")
+    newdf.write.parquet("s3a://steam-json-bucket/parquet/steam_complex.parquet")
 }

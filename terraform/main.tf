@@ -8,21 +8,6 @@ resource "aws_s3_bucket" "s3_steam_json_data" {
 }
 
 
-resource "aws_s3_bucket_lifecycle_configuration" "archive_week_old_data" {
-    bucket = aws_s3_bucket.s3_steam_json_data.id
-
-    rule {
-        id      = "move-to-glacier"
-        status  = "Enabled"
-        prefix  = ""
-
-        transition {
-            days          = 7
-            storage_class = "GLACIER"
-        }
-    }
-}
-
 data "aws_availability_zones" "available" {}
 
 resource "aws_vpc" "redshift-vpc" {
@@ -47,26 +32,13 @@ resource "aws_subnet" "redshift-subnet-az1" {
   }
 }
 
-
-resource "aws_subnet" "redshift-subnet-az2" {
-  vpc_id            = aws_vpc.redshift-vpc.id
-  cidr_block        = var.redshift_subnet_2_cidr
-  availability_zone = data.aws_availability_zones.available.names[1]
-  
-  tags = {
-    Name        = "redshift-subnet-az2"
-    Environment = "dev"
-  }
-}
-
 resource "aws_redshift_subnet_group" "redshift-subnet-group" {
   depends_on = [
     aws_subnet.redshift-subnet-az1,
-    aws_subnet.redshift-subnet-az2,
   ]
 
   name       = "redshift-subnet-group"
-  subnet_ids = [aws_subnet.redshift-subnet-az1.id, aws_subnet.redshift-subnet-az2.id]
+  subnet_ids = [aws_subnet.redshift-subnet-az1.id]
 
   tags = {
     Name        = "redshift-subnet-group"
@@ -100,11 +72,6 @@ resource "aws_route_table" "redshift-rt-igw" {
 
 resource "aws_route_table_association" "redshift-subnet-rt-association-igw-az1" {
   subnet_id      = aws_subnet.redshift-subnet-az1.id
-  route_table_id = aws_route_table.redshift-rt-igw.id
-}
-
-resource "aws_route_table_association" "redshift-subnet-rt-association-igw-az2" {
-  subnet_id      = aws_subnet.redshift-subnet-az2.id
   route_table_id = aws_route_table.redshift-rt-igw.id
 }
 
