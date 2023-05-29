@@ -5,6 +5,7 @@ import ast
 from billiard import Pool
 
 from airflow import DAG
+from airflow.models import Variable
 
 from airflow.operators.python_operator import PythonOperator
 from airflow.operators.bash_operator import BashOperator
@@ -12,9 +13,14 @@ from airflow.operators.bash_operator import BashOperator
 from airflow.hooks.S3_hook import S3Hook
 from airflow.providers.amazon.aws.transfers.s3_to_redshift import S3ToRedshiftOperator
 
+from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOperator
+
 AIRFLOW_DIR = "/opt/airflow/"
 AWS_S3_BUCKET = 'steam-json-bucket'
 AIRFLOW_AWS_CONNECTION = 'AWS'
+
+AWS_ACCESS_KEY_ID = Variable.get("AWS_ACCESS_KEY_ID")
+AWS_SECRET_ACCESS_KEY = Variable.get("AWS_SECRET_ACCESS_KEY")
 
 def get_data_from_api(url):
     response = requests.get(url)
@@ -133,7 +139,7 @@ with DAG('process_steam_data_with_api',
             op_kwargs={
                 'urls': '{{task_instance.xcom_pull(key="ids of games", task_ids="get_ids_from_json")}}',
                 'header': 'https://steamspy.com/api.php?request=appdetails&appid=',
-                'filename': 'steam_full'
+                'filename': 'steam_complex'
             }
         )
 
@@ -142,31 +148,42 @@ with DAG('process_steam_data_with_api',
             python_callable=upload_to_s3,
             op_kwargs={
                 'connection_id': AIRFLOW_AWS_CONNECTION,
-                'filename': f'{AIRFLOW_DIR}steam_full.json',
-                'key': 'steam_full.json',
+                'filename': f'{AIRFLOW_DIR}steam_complex.json',
+                'key': 'steam_complex.json',
                 'bucket_name': AWS_S3_BUCKET
             }
         )
 
-
         remove_full_json_locally = BashOperator(
             task_id="remove_full_json_locally",
-            bash_command=f"rm {AIRFLOW_DIR}steam_full.json",
+            bash_command=f"rm {AIRFLOW_DIR}steam_complex.json",
         )
 
+        transform_games = SparkSubmitOperator(
+            task_id = "transform_games",
+            application = "/opt/airflow/jars/spark_transformations.jar",
+            java_class="ProcessJSON",
+            driver_class_path="/opt/airflow/jars/aws-java-sdk-bundle-1.11.1026.jar",
+            jars = '/opt/airflow/jars/hadoop-aws-3.3.2.jar',
+            packages='',
+            env_vars={
+                    'AWS_ACCESS_KEY_ID': AWS_ACCESS_KEY_ID,
+                    'AWS_SECRET_ACCESS_KEY': AWS_SECRET_ACCESS_KEY
+                    },
+            conn_id = "spark_default"
+        )
 
-        # transfer_s3_to_redshift = S3ToRedshiftOperator(
-        #     task_id="transfer_s3_to_redshift",
-        #     redshift_conn_id="AWS_REDSHIFT",
-        #     aws_conn_id="AWS",
-        #     s3_bucket="steam-json-bucket",
-        #     s3_key="parquet/steam_complex.parquet",
-        #     schema="public",
-        #     table="steamdata",
-        #     method = "replace",
-        #     copy_options=["parquet"],
-        # )
+        transfer_s3_to_redshift = S3ToRedshiftOperator(
+            task_id="transfer_s3_to_redshift",
+            redshift_conn_id="AWS_REDSHIFT",
+            aws_conn_id="AWS",
+            s3_bucket="steam-json-bucket",
+            s3_key="parquet/steam_complex.parquet",
+            schema="public",
+            table="steamdata",
+            method = "REPLACE",
+            copy_options=["parquet"],
+        )
 
         get_basic_app_info >> get_ids_from_json >> remove_json_locally
-        get_ids_from_json >> get_full_app_info >> upload_total_json_to_s3 >> remove_full_json_locally
-        # do spark stuff >> transfer_s3_to_redshift
+        get_ids_from_json >> get_full_app_info >> upload_total_json_to_s3 >> remove_full_json_locally >> transform_games >> transfer_s3_to_redshift
