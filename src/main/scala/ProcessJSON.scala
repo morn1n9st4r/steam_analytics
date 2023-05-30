@@ -22,12 +22,10 @@ object ProcessJSON extends App {
         .hadoopConfiguration
         .set("fs.s3a.endpoint", "s3.amazonaws.com")
     
-    // val df = spark.read.option("inferSchema", "true")
-    //                   .json("s3a://steam-json-bucket/steam_complex.json")
-    
     val df = spark.read.option("inferSchema", "true")
                        .option("mode", "DROPMALFORMED")
-                       .json("/home/urie/Documents/steam_analytics/steam_complex.json")
+                       .json("s3a://steam-json-bucket/steam_complex.json")
+
 
     df.printSchema()
 
@@ -60,7 +58,7 @@ object ProcessJSON extends App {
     
     val newdf = df.drop(col("tags"))
                   //.join(prefixedData, df("appid") === resultDF("tagged_appid"))
-                  //.drop(col("tag_appid"))
+                  //.drop(col("tagged_appid"))
 
     val languageAbbreviations = Map(
       "English" -> "EN",
@@ -131,7 +129,5 @@ object ProcessJSON extends App {
 
     updatedData.printSchema()
     updatedData.show()
-    //val lengthData = updatedData.withColumn("len", length(col("languagesAbbs")))
-    //lengthData.select(col("languagesAbbs"), col("len")).show()
-    //updatedData.write.parquet("s3a://steam-json-bucket/parquet/steam_complex.parquet")
+    updatedData.write.parquet("s3a://steam-json-bucket/parquet/steam_complex.parquet")
 }
