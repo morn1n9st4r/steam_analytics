@@ -1,5 +1,7 @@
 import org.apache.spark.sql.{SparkSession}
-import org.apache.spark.sql.functions.{col, udf, length}
+import org.apache.spark.sql.functions.{col, udf, length, concat_ws, coalesce, lit, when}
+
+import scala.util.Try
 
 object ProcessJSON extends App {
 
@@ -20,31 +22,59 @@ object ProcessJSON extends App {
         .hadoopConfiguration
         .set("fs.s3a.endpoint", "s3.amazonaws.com")
     
-    val df = spark.read.option("inferSchema", "true")
-                       .json("s3a://steam-json-bucket/steam_complex.json")
+    // val df = spark.read.option("inferSchema", "true")
+    //                   .json("s3a://steam-json-bucket/steam_complex.json")
     
+    val df = spark.read.option("inferSchema", "true")
+                       .option("mode", "DROPMALFORMED")
+                       .json("/home/urie/Documents/steam_analytics/steam_complex.json")
+
     df.printSchema()
 
-    val df_flattened = df.selectExpr("appid","tags.*")
-                         .na.fill(0)
-    df_flattened.registerTempTable("tags")
 
-    val prefixedData = df_flattened.columns.foldLeft(df_flattened) { (df, column) =>
+/*
+    //TODO: fix column names for tags and leave only top 10 
+
+    val df_flattened = df.selectExpr("appid","tags.*")
+    df_flattened.registerTempTable("tags")
+    val prefixed_tags_all = df_flattened.columns.foldLeft(df_flattened) { (df, column) =>
         df.withColumnRenamed(column, "tag_" + column)
     }
+    val prefixed_tags = prefixed_tags_all.withColumnRenamed("tag_appid", "tagged_appid")
+    val oldColumns = prefixed_tags.columns
+    val sanitizedColumns = prefixed_tags.columns.map(_.replaceAll("[^a-zA-Z0-9_]", "_"))
+    val newColumnsExpr = oldColumns.zip(sanitizedColumns).map { case (oldCol, newCol) =>
+        col(oldCol).as(newCol)
+    }
+    val updatedDF = prefixed_tags.select(newColumnsExpr: _*)
+    val tagColumns = sanitizedColumns.filter(_.startsWith("tag_"))
 
+    val joinedTags = updatedDF.withColumn(
+        "tags",
+        concat_ws(", ", tagColumns.map(c => when(col(c).isNotNull, c)).filter(_ != null): _*)
+    )
+    val resultDF = joinedTags.select("tagged_appid", "tags")
+    resultDF.show()
+    println(resultDF.columns.length)*/
 
+    
     val newdf = df.drop(col("tags"))
-                  .join(prefixedData, df("appid") === prefixedData("tag_appid"))
-                  .drop(col("tag_appid"))
-   
+                  //.join(prefixedData, df("appid") === resultDF("tagged_appid"))
+                  //.drop(col("tag_appid"))
+
     val languageAbbreviations = Map(
       "English" -> "EN",
       "Spanish" -> "ES",
+      "Spanish - Spain" -> "ES",
+      "Spanish - Latin America" -> "ES",
       "Chinese" -> "ZH",
+      "Simplified Chinese" -> "ZH",
+      "Traditional Chinese" -> "ZH",
       "Hindi" -> "HI",
       "Arabic" -> "AR",
       "Portuguese" -> "PT",
+      "Portuguese - Brazil" -> "PT",
+      "Portuguese - Portugal" -> "PT",
       "Bengali" -> "BN",
       "Russian" -> "RU",
       "Japanese" -> "JA",
@@ -103,5 +133,5 @@ object ProcessJSON extends App {
     updatedData.show()
     //val lengthData = updatedData.withColumn("len", length(col("languagesAbbs")))
     //lengthData.select(col("languagesAbbs"), col("len")).show()
-    updatedData.write.parquet("s3a://steam-json-bucket/parquet/steam_complex.parquet")
+    //updatedData.write.parquet("s3a://steam-json-bucket/parquet/steam_complex.parquet")
 }
