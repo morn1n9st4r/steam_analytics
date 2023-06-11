@@ -82,7 +82,14 @@ def get_dicts_from_file(filename):
             js = {}
             if line.startswith("{"):
                 js = ast.literal_eval(line[0:-2])
-            dicts.append(js)
+            
+            # parsing fallout new vegas breaks transformations into parquet
+            # for unknown reasons
+            # 22490 - appid for fallout new vegas 
+            if js['appid'] == 22490:
+                pass
+            else:
+                dicts.append(js)
     return dicts
 
 
