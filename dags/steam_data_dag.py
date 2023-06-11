@@ -61,11 +61,9 @@ def callApi(**kwargs):
 
     file_path = f"{AIRFLOW_DIR}{filename}.json" 
     with open(file_path, "w") as file:
-        file.write("[")
         for json_one in json_ans:
             file.write(str(json_one))
             file.write(",\n")
-        file.write("]")
 
 
 def upload_to_s3(connection_id, filename, key, bucket_name):
@@ -82,9 +80,7 @@ def get_dicts_from_file(filename):
         lines = file.readlines()
         for line in lines:
             js = {}
-            if line.startswith("["):
-                js = ast.literal_eval(line[1:-2])
-            elif line.startswith("{"):
+            if line.startswith("{"):
                 js = ast.literal_eval(line[0:-2])
             dicts.append(js)
     return dicts
@@ -114,7 +110,7 @@ with DAG('process_steam_data_with_api',
             task_id=f'get_basic_app_info',
             python_callable=callApi,
             op_kwargs={
-                'urls': "0",
+                'urls': "0, 1, 2, 3, 4",
                 'header': 'https://steamspy.com/api.php?request=all&page=',
                 'filename': 'steam_simple'
              }
