@@ -12,8 +12,8 @@ from airflow.operators.bash_operator import BashOperator
 
 from airflow.hooks.S3_hook import S3Hook
 from airflow.providers.amazon.aws.transfers.s3_to_redshift import S3ToRedshiftOperator
-
 from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOperator
+from great_expectations_provider.operators.great_expectations import GreatExpectationsOperator
 
 AIRFLOW_DIR = "/opt/airflow/"
 AWS_S3_BUCKET = 'steam-json-bucket'
@@ -188,5 +188,14 @@ with DAG('process_steam_data_with_api',
             copy_options=["parquet"],
         )
 
+
+        ge_validate_data = GreatExpectationsOperator(
+            task_id='validate_parsed_data',
+            data_context_root_dir="/opt/airflow/great_expectations/",
+            checkpoint_name = "steamdata_checkpoints",
+            return_json_dict=True,
+            fail_task_on_validation_failure=True
+        )
+
         get_basic_app_info >> get_ids_from_json >> remove_json_locally
-        get_ids_from_json >> get_full_app_info >> upload_total_json_to_s3 >> remove_full_json_locally >> transform_games >> transfer_s3_to_redshift
+        get_ids_from_json >> get_full_app_info >> upload_total_json_to_s3 >> remove_full_json_locally >> transform_games >> transfer_s3_to_redshift >> ge_validate_data

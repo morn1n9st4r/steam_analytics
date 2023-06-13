@@ -1,0 +1,60 @@
+{
+  "data_asset_type": null,
+  "expectation_suite_name": "steamdata_st",
+  "expectations": [
+    {
+      "expectation_type": "expect_column_values_to_not_be_null",
+      "kwargs": {
+        "column": "appid",
+        "mostly": 1.0
+      },
+      "meta": {
+        "notes": {
+          "content": "id could not be null",
+          "format": "markdown"
+        }
+      }
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_between",
+      "kwargs": {
+        "column": "discount",
+        "max_value": 100.0,
+        "min_value": 0.0
+      },
+      "meta": {
+        "notes": {
+          "content": "discount should be in range [0, 100]",
+          "format": "markdown"
+        }
+      }
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_in_set",
+      "kwargs": {
+        "column": "owners",
+        "value_set": [
+          "200,000 .. 500,000",
+          "0 .. 20,000",
+          "500,000 .. 1,000,000",
+          "20,000 .. 50,000",
+          "100,000 .. 200,000",
+          "1,000,000 .. 2,000,000",
+          "50,000 .. 100,000",
+          "2,000,000 .. 5,000,000",
+          "5,000,000 .. 10,000,000"
+        ]
+      },
+      "meta": {
+        "notes": {
+          "content": "number of owners shoub be in specific category",
+          "format": "markdown"
+        }
+      }
+    }
+  ],
+  "ge_cloud_id": null,
+  "meta": {
+    "great_expectations_version": "0.16.16"
+  }
+}
